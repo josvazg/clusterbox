@@ -27,6 +27,10 @@ func (n *node) close() error {
 	return n.ln.Close()
 }
 
+type clusterbox struct {
+	nodes []*node
+}
+
 func newNode(i int) (*node, error) {
 	ln, err := net.Listen("tcp4", ":0")
 	if err != nil {
@@ -35,7 +39,7 @@ func newNode(i int) (*node, error) {
 	return &node{ln: ln}, nil
 }
 
-func setupNodes(maxNodes int) []*node {
+func newClusterBox(maxNodes int) *clusterbox {
 	nodes := make([]*node, 0, maxNodes)
 	for i := 0; i < maxNodes; i++ {
 		node, err := newNode(i)
@@ -43,27 +47,27 @@ func setupNodes(maxNodes int) []*node {
 		nodes = append(nodes, node)
 		fmt.Printf("Node %d listens at %s\n", i, node.endpoint())
 	}
-	return nodes
+	return &clusterbox{nodes: nodes}
 }
 
-func closeAll(nodes []*node) {
-	for i, node := range nodes {
+func (c *clusterbox) close() {
+	for i, node := range c.nodes {
 		fmt.Printf("Closing node %d listening at %s\n", i, node.endpoint())
 		dieOnError(node.close())
 	}
 }
 
-func clusterbox(maxNodes int) {
-	nodes := setupNodes(maxNodes)
+func runCluster(size int) {
+	clusterbox := newClusterBox(size)
 	// TODO: initiate some traffic on cluster
-	closeAll(nodes)
+	clusterbox.close()
 }
 
 func main() {
-	var nodes int
-	flag.IntVar(&nodes, "Nodes", 100, "Number of nodes to generate")
+	var size int
+	flag.IntVar(&size, "Size", 100, "Number of nodes to generate")
 	flag.Parse()
 
 	fmt.Printf("Building clusterbox of %d nodes...\n", nodes)
-	clusterbox(nodes)
+	runCluster(size)
 }
