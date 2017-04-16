@@ -2,7 +2,6 @@ package clusterbox
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -18,17 +17,13 @@ type nodeRef struct {
 }
 
 type node struct {
-	ln     net.Listener
-	ctx    context.Context
-	cancel context.CancelFunc
+	ln        net.Listener
+	endClient chan struct{}
 	// sample specific
 	mtx       sync.RWMutex
 	nodeList  []*nodeRef
 	neighbors int
-	stopped   bool
 }
-
-var nodes []*node
 
 // NewNode creates a new sample node
 func NewNode(i int) (Node, error) {
@@ -37,8 +32,9 @@ func NewNode(i int) (Node, error) {
 		return nil, err
 	}
 	return &node{
-		ln:       ln,
-		nodeList: make([]*nodeRef, 0),
+		ln:        ln,
+		endClient: make(chan struct{}),
+		nodeList:  make([]*nodeRef, 0),
 	}, nil
 }
 
@@ -46,9 +42,7 @@ func (n *node) Endpoint() string {
 	return n.ln.Addr().String()
 }
 
-func (n *node) Setup(ctx context.Context, cancel context.CancelFunc, nodes []Node) {
-	n.ctx = ctx
-	n.cancel = cancel
+func (n *node) Setup(nodes []Node) {
 	n.add(n.Endpoint())
 	for i, node := range nodes {
 		if node.Endpoint() == n.Endpoint() {
@@ -126,7 +120,7 @@ func (n *node) ClientLoop() {
 	var pause time.Duration
 	for {
 		select {
-		case <-n.ctx.Done():
+		case <-n.endClient:
 			return
 		case <-time.After(pause * time.Millisecond):
 			neighborIndex, neighborRef := n.next(neighbor)
@@ -170,10 +164,10 @@ func (n *node) ClientLoop() {
 }
 
 func (n *node) Stop() error {
-	if !n.stopped {
-		n.stopped = true
-		n.cancel()
-		return n.ln.Close()
+	select {
+	case <-n.endClient:
+	default:
+		close(n.endClient)
 	}
-	return nil
+	return n.ln.Close()
 }

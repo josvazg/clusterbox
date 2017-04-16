@@ -1,7 +1,6 @@
 package clusterbox
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -10,11 +9,23 @@ import (
 
 // Node that a ClusterBox can manage
 type Node interface {
-	Endpoint() string                                                               // return the node endpoint
-	Setup(cancelContext context.Context, cancelFn context.CancelFunc, nodes []Node) // setup the node
-	Serve()                                                                         // run the server loop, block until complete or stopped
-	ClientLoop()                                                                    // run the client loop, until complete or stopped
-	Stop() error                                                                    // stop the Node, should make Serve() and ClientLoop() end if they were still running
+	// Endpoint returns the node's endpoint.
+	Endpoint() string
+
+	// Setup sets the node up for work
+	Setup(nodes []Node)
+	// Serve is a blocking call that runs the server loop.
+	//
+	// It blocks until the service completes or the Node is Stopped
+	Serve()
+
+	// ClientLoop is a blocking call that runs the client loop.
+	//
+	// It blocks until completed or the Node is stopped
+	ClientLoop()
+
+	// Stop the Node
+	Stop() error
 }
 
 // NewNodeFunc creates a fresh Node for ClusterBox
@@ -42,19 +53,19 @@ func NewClusterBox(size int, newNode NewNodeFunc) (*ClusterBox, error) {
 
 // Run the ClusterBox until all nodes stop
 func (c *ClusterBox) Run() {
-	ctx, cancel := context.WithCancel(context.Background())
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
 	go func() {
 		<-interrupts
 		fmt.Println("Received Ctrl+C, stopping nodes...")
-		cancel()
+		for _, n := range c.nodes {
+			n.Stop()
+		}
 	}()
 	for _, n := range c.nodes {
 		c.wg.Add(1)
-		go func(ctx context.Context, n Node) {
-			nodeCtx, cancelNode := context.WithCancel(ctx)
-			n.Setup(nodeCtx, cancelNode, c.nodes)
+		go func(n Node) {
+			n.Setup(c.nodes)
 			serverDone := make(chan struct{})
 			go func(n Node, serverDone chan struct{}) {
 				n.Serve()
@@ -80,9 +91,7 @@ func (c *ClusterBox) Run() {
 			<-peerDone
 			fmt.Printf("%s closed both client&server\n", n.Endpoint())
 			c.wg.Done()
-			cancelNode()
-		}(ctx, n)
+		}(n)
 	}
 	c.wg.Wait()
-	cancel()
 }
