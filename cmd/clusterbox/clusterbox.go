@@ -4,31 +4,12 @@ import (
 	"flag"
 	"fmt"
 	"net"
-	"os"
+	"sync"
 )
-
-type node struct {
-	ln net.Listener
-}
-
-var nodes []*node
-
-func dieOnError(err error) {
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal: %v\n", err)
-	}
-}
-
-func (n *node) endpoint() string {
-	return n.ln.Addr().String()
-}
-
-func (n *node) close() error {
-	return n.ln.Close()
-}
 
 type clusterbox struct {
 	nodes []*node
+	wg    sync.WaitGroup
 }
 
 func newNode(i int) (*node, error) {
@@ -36,7 +17,10 @@ func newNode(i int) (*node, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &node{ln: ln}, nil
+	return &node{
+		ln:       ln,
+		nodeList: make([]*nodeRef, 0),
+	}, nil
 }
 
 func newClusterBox(maxNodes int) *clusterbox {
@@ -50,6 +34,31 @@ func newClusterBox(maxNodes int) *clusterbox {
 	return &clusterbox{nodes: nodes}
 }
 
+func (c *clusterbox) run() {
+	for _, n := range c.nodes {
+		c.wg.Add(1)
+		go func(n *node) {
+			n.setup(c.nodes)
+			serverDone := make(chan struct{})
+			go func(n *node, serverDone chan struct{}) {
+				n.serve()
+				close(serverDone)
+			}(n, serverDone)
+			clientDone := make(chan struct{})
+			go func(n *node, clientDone chan struct{}) {
+				n.clientLoop()
+				close(clientDone)
+			}(n, clientDone)
+			select {
+			case <-serverDone:
+			case <-clientDone:
+			}
+			c.wg.Done()
+		}(n)
+	}
+	c.wg.Wait()
+}
+
 func (c *clusterbox) close() {
 	for i, node := range c.nodes {
 		fmt.Printf("Closing node %d listening at %s\n", i, node.endpoint())
@@ -59,7 +68,7 @@ func (c *clusterbox) close() {
 
 func runCluster(size int) {
 	clusterbox := newClusterBox(size)
-	// TODO: initiate some traffic on cluster
+	clusterbox.run()
 	clusterbox.close()
 }
 
@@ -68,6 +77,6 @@ func main() {
 	flag.IntVar(&size, "Size", 100, "Number of nodes to generate")
 	flag.Parse()
 
-	fmt.Printf("Building clusterbox of %d nodes...\n", nodes)
+	fmt.Printf("Building clusterbox of %d nodes...\n", size)
 	runCluster(size)
 }
