@@ -11,38 +11,39 @@ import (
 	"time"
 )
 
-type nodeRef struct {
-	endpoint string
-	modified time.Time
-}
-
-type node struct {
+// HTTPNode is the generic HTTPNode
+type HTTPNode struct {
 	ln        net.Listener
 	endClient chan struct{}
-	// sample specific
+}
+
+// gossipNode is the sample gossipNode
+type gossipNode struct {
+	HTTPNode
 	mtx       sync.RWMutex
-	nodeList  []*nodeRef
+	nodeList  []string
 	neighbors int
 }
 
-// NewNode creates a new sample node
-func NewNode(i int) (Node, error) {
+// NewGossipNode creates a new sample gossipNode
+func NewGossipNode(i int) (Node, error) {
 	ln, err := net.Listen("tcp4", ":0")
 	if err != nil {
 		return nil, err
 	}
-	return &node{
-		ln:        ln,
-		endClient: make(chan struct{}),
-		nodeList:  make([]*nodeRef, 0),
+	return &gossipNode{
+		HTTPNode: HTTPNode{ln: ln, endClient: make(chan struct{})},
+		nodeList: make([]string, 0),
 	}, nil
 }
 
-func (n *node) Endpoint() string {
+// Endpoint returns this HTTPNode's endpoint
+func (n *HTTPNode) Endpoint() string {
 	return n.ln.Addr().String()
 }
 
-func (n *node) Setup(nodes []Node) {
+// Setup prepares up a gossipNode to do work
+func (n *gossipNode) Setup(nodes []Node) {
 	n.add(n.Endpoint())
 	for i, node := range nodes {
 		if node.Endpoint() == n.Endpoint() {
@@ -56,37 +57,37 @@ func (n *node) Setup(nodes []Node) {
 	//fmt.Printf("Node %s neightbours are %v\n", n.endpoint(), n.neighbors)
 }
 
-func (n *node) add(endpoint string) {
+func (n *gossipNode) add(endpoint string) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
-	n.nodeList = append(n.nodeList, &nodeRef{endpoint, time.Now()})
+	n.nodeList = append(n.nodeList, endpoint)
 }
 
-func (n *node) has(endpoint string) bool {
+func (n *gossipNode) has(endpoint string) bool {
 	n.mtx.RLock()
 	defer n.mtx.RUnlock()
-	for _, eRef := range n.nodeList {
-		if endpoint == eRef.endpoint {
+	for _, ep := range n.nodeList {
+		if endpoint == ep {
 			return true
 		}
 	}
 	return false
 }
 
-func (n *node) incNeighbors() {
+func (n *gossipNode) incNeighbors() {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 	n.neighbors++
 }
 
-func (n *node) size() int {
+func (n *gossipNode) size() int {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 	return len(n.nodeList)
 }
 
 // go to next neighbor, never 0, cause that is this node
-func (n *node) next(neighbor int) (int, *nodeRef) {
+func (n *gossipNode) next(neighbor int) (int, string) {
 	n.mtx.RLock()
 	defer n.mtx.RUnlock()
 	neighbor++
@@ -96,14 +97,14 @@ func (n *node) next(neighbor int) (int, *nodeRef) {
 	return neighbor, n.nodeList[neighbor]
 }
 
-func (n *node) dumpEndpoints(resp http.ResponseWriter, req *http.Request) {
+func (n *gossipNode) dumpEndpoints(resp http.ResponseWriter, req *http.Request) {
 	resp.WriteHeader(http.StatusOK)
-	for _, ref := range n.nodeList {
-		fmt.Fprintf(resp, "%s\n", ref.endpoint)
+	for _, endpoint := range n.nodeList {
+		fmt.Fprintf(resp, "%s\n", endpoint)
 	}
 }
 
-func (n *node) Serve() {
+func (n *gossipNode) Serve() {
 	//fmt.Printf("%s doing serve()\n", n.endpoint())
 	serveMux := http.NewServeMux()
 	serveMux.HandleFunc("/", n.dumpEndpoints)
@@ -114,7 +115,7 @@ func (n *node) Serve() {
 	}
 }
 
-func (n *node) ClientLoop() {
+func (n *gossipNode) ClientLoop() {
 	neighbor := 0
 	client := &http.Client{}
 	var pause time.Duration
@@ -123,10 +124,10 @@ func (n *node) ClientLoop() {
 		case <-n.endClient:
 			return
 		case <-time.After(pause * time.Millisecond):
-			neighborIndex, neighborRef := n.next(neighbor)
+			neighborIndex, endpoint := n.next(neighbor)
 			neighbor = neighborIndex
 			// request endpoint dump from neighbor
-			url := "http://" + neighborRef.endpoint
+			url := "http://" + endpoint
 			resp, err := client.Get(url)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s client() got error: %v\n", n.Endpoint(), err)
@@ -163,10 +164,13 @@ func (n *node) ClientLoop() {
 	}
 }
 
-func (n *node) Stop() error {
+// Stop the HTTPNode work (Serve & ClientLoop)
+func (n *HTTPNode) Stop() error {
 	select {
 	case <-n.endClient:
+		// when endClient is already closed
 	default:
+		// when endClient is not closed yet
 		close(n.endClient)
 	}
 	return n.ln.Close()

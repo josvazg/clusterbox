@@ -16,7 +16,7 @@ func dieOnError(err error) {
 }
 
 func runCluster(size int) {
-	clusterbox, err := clusterbox.NewClusterBox(size, clusterbox.NewNode)
+	clusterbox, err := clusterbox.NewClusterBox(size, clusterbox.NewGossipNode)
 	dieOnError(err)
 	clusterbox.Run()
 }
