@@ -1,4 +1,4 @@
-package main
+package clusterbox
 
 import (
 	"bufio"
@@ -30,20 +30,32 @@ type node struct {
 
 var nodes []*node
 
-func (n *node) endpoint() string {
+// NewNode creates a new sample node
+func NewNode(i int) (Node, error) {
+	ln, err := net.Listen("tcp4", ":0")
+	if err != nil {
+		return nil, err
+	}
+	return &node{
+		ln:       ln,
+		nodeList: make([]*nodeRef, 0),
+	}, nil
+}
+
+func (n *node) Endpoint() string {
 	return n.ln.Addr().String()
 }
 
-func (n *node) setup(ctx context.Context, cancel context.CancelFunc, nodes []*node) {
+func (n *node) Setup(ctx context.Context, cancel context.CancelFunc, nodes []Node) {
 	n.ctx = ctx
 	n.cancel = cancel
-	n.add(n.endpoint())
+	n.add(n.Endpoint())
 	for i, node := range nodes {
-		if node == n {
+		if node.Endpoint() == n.Endpoint() {
 			next := (i + 1) % len(nodes)
 			nextNext := (i + 2) % len(nodes)
-			n.add(nodes[next].endpoint())
-			n.add(nodes[nextNext].endpoint())
+			n.add(nodes[next].Endpoint())
+			n.add(nodes[nextNext].Endpoint())
 		}
 	}
 	n.neighbors = len(n.nodeList)
@@ -97,18 +109,18 @@ func (n *node) dumpEndpoints(resp http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (n *node) serve() {
+func (n *node) Serve() {
 	//fmt.Printf("%s doing serve()\n", n.endpoint())
 	serveMux := http.NewServeMux()
 	serveMux.HandleFunc("/", n.dumpEndpoints)
-	endpoint := n.endpoint()
+	endpoint := n.Endpoint()
 	err := http.Serve(n.ln, serveMux)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s serve() died with: %v\n", endpoint, err)
 	}
 }
 
-func (n *node) clientLoop() {
+func (n *node) ClientLoop() {
 	neighbor := 0
 	client := &http.Client{}
 	var pause time.Duration
@@ -123,7 +135,7 @@ func (n *node) clientLoop() {
 			url := "http://" + neighborRef.endpoint
 			resp, err := client.Get(url)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s client() got error: %v\n", n.endpoint(), err)
+				fmt.Fprintf(os.Stderr, "%s client() got error: %v\n", n.Endpoint(), err)
 			}
 			// merge endpoints received
 			inEndpoints := make([]string, 0, 1)
@@ -149,7 +161,7 @@ func (n *node) clientLoop() {
 				pause = 20
 			}
 			if sizeAfter != sizeBefore {
-				fmt.Printf("%s now knows %d nodes\n", n.endpoint(), sizeAfter)
+				fmt.Printf("%s now knows %d nodes\n", n.Endpoint(), sizeAfter)
 			} else {
 				pause = 500
 			}
@@ -157,7 +169,7 @@ func (n *node) clientLoop() {
 	}
 }
 
-func (n *node) stop() error {
+func (n *node) Stop() error {
 	if !n.stopped {
 		n.stopped = true
 		n.cancel()
