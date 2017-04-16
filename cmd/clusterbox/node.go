@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -17,26 +18,25 @@ type nodeRef struct {
 }
 
 type node struct {
-	ln net.Listener
+	ln     net.Listener
+	ctx    context.Context
+	cancel context.CancelFunc
 	// sample specific
 	mtx       sync.RWMutex
 	nodeList  []*nodeRef
 	neighbors int
+	stopped   bool
 }
 
 var nodes []*node
-
-func dieOnError(err error) {
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal: %v\n", err)
-	}
-}
 
 func (n *node) endpoint() string {
 	return n.ln.Addr().String()
 }
 
-func (n *node) setup(nodes []*node) {
+func (n *node) setup(ctx context.Context, cancel context.CancelFunc, nodes []*node) {
+	n.ctx = ctx
+	n.cancel = cancel
 	n.add(n.endpoint())
 	for i, node := range nodes {
 		if node == n {
@@ -80,14 +80,14 @@ func (n *node) size() int {
 }
 
 // go to next neighbor, never 0, cause that is this node
-func (n *node) next(neighbor int) int {
+func (n *node) next(neighbor int) (int, *nodeRef) {
 	n.mtx.RLock()
 	defer n.mtx.RUnlock()
 	neighbor++
-	if neighbor > n.neighbors {
-		return 1
+	if neighbor >= n.neighbors {
+		neighbor = 1
 	}
-	return neighbor
+	return neighbor, n.nodeList[neighbor]
 }
 
 func (n *node) dumpEndpoints(resp http.ResponseWriter, req *http.Request) {
@@ -111,44 +111,57 @@ func (n *node) serve() {
 func (n *node) clientLoop() {
 	neighbor := 0
 	client := &http.Client{}
+	var pause time.Duration
 	for {
-		// wait some millis
-		time.Sleep(10 * time.Millisecond)
-		neighbor = n.next(neighbor)
-		// request endpoint dump from neighbor
-		url := "http://" + n.nodeList[neighbor].endpoint
-		resp, err := client.Get(url)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s client() got error: %v\n", n.endpoint(), err)
-		}
-		// merge endpoints received
-		inEndpoints := make([]string, 0, 1)
-		scanner := bufio.NewScanner(resp.Body)
-		for scanner.Scan() {
-			endpoint := strings.Trim(scanner.Text(), " ")
-			// TODO validate endpoint
-			inEndpoints = append(inEndpoints, endpoint)
-		}
-		if err := scanner.Err(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading server reply: %v\n", err)
+		select {
+		case <-n.ctx.Done():
 			return
-		}
-		sizeBefore := n.size()
-		for _, endpoint := range inEndpoints {
-			if !n.has(endpoint) {
-				n.add(endpoint)
+		case <-time.After(pause * time.Millisecond):
+			neighborIndex, neighborRef := n.next(neighbor)
+			neighbor = neighborIndex
+			// request endpoint dump from neighbor
+			url := "http://" + neighborRef.endpoint
+			resp, err := client.Get(url)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s client() got error: %v\n", n.endpoint(), err)
 			}
-		}
-		sizeAfter := n.size()
-		if sizeAfter > sizeBefore {
-			n.incNeighbors()
-		}
-		if sizeAfter != sizeBefore {
-			fmt.Printf("%s now knows %d nodes\n", n.endpoint(), sizeAfter)
+			// merge endpoints received
+			inEndpoints := make([]string, 0, 1)
+			scanner := bufio.NewScanner(resp.Body)
+			for scanner.Scan() {
+				endpoint := strings.Trim(scanner.Text(), " ")
+				// TODO validate endpoint
+				inEndpoints = append(inEndpoints, endpoint)
+			}
+			if err := scanner.Err(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error reading server reply: %v\n", err)
+				return
+			}
+			sizeBefore := n.size()
+			for _, endpoint := range inEndpoints {
+				if !n.has(endpoint) {
+					n.add(endpoint)
+				}
+			}
+			sizeAfter := n.size()
+			if sizeAfter > sizeBefore {
+				n.incNeighbors()
+				pause = 20
+			}
+			if sizeAfter != sizeBefore {
+				fmt.Printf("%s now knows %d nodes\n", n.endpoint(), sizeAfter)
+			} else {
+				pause = 500
+			}
 		}
 	}
 }
 
-func (n *node) close() error {
-	return n.ln.Close()
+func (n *node) stop() error {
+	if !n.stopped {
+		n.stopped = true
+		n.cancel()
+		return n.ln.Close()
+	}
+	return nil
 }
