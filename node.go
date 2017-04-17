@@ -2,6 +2,7 @@ package clusterbox
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,10 +12,15 @@ import (
 	"time"
 )
 
+// ClientFunc is the function handling the Node's client side behavior
+type ClientFunc func(context.Context)
+
 // HTTPNode is the generic HTTPNode
 type HTTPNode struct {
-	ln        net.Listener
-	endClient chan struct{}
+	ln     net.Listener
+	ctx    context.Context
+	cancel context.CancelFunc
+	client ClientFunc
 }
 
 // gossipNode is the sample gossipNode
@@ -31,10 +37,17 @@ func NewGossipNode(i int) (Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &gossipNode{
-		HTTPNode: HTTPNode{ln: ln, endClient: make(chan struct{})},
+	ctx, cancel := context.WithCancel(context.Background())
+	node := &gossipNode{
+		HTTPNode: HTTPNode{
+			ln:     ln,
+			ctx:    ctx,
+			cancel: cancel,
+		},
 		nodeList: make([]string, 0),
-	}, nil
+	}
+	node.client = n.clientFn
+	return node, nil
 }
 
 // Endpoint returns this HTTPNode's endpoint
@@ -115,13 +128,18 @@ func (n *gossipNode) Serve() {
 	}
 }
 
-func (n *gossipNode) ClientLoop() {
+// ClientLoop runs the client until completed or the node stops
+func (n *HTTPNode) ClientLoop() {
+	n.client(n.ctx)
+}
+
+func (n *gossipNode) clientFn(ctx context.Context) {
 	neighbor := 0
 	client := &http.Client{}
 	var pause time.Duration
 	for {
 		select {
-		case <-n.endClient:
+		case <-ctx.Done():
 			return
 		case <-time.After(pause * time.Millisecond):
 			neighborIndex, endpoint := n.next(neighbor)
@@ -167,11 +185,11 @@ func (n *gossipNode) ClientLoop() {
 // Stop the HTTPNode work (Serve & ClientLoop)
 func (n *HTTPNode) Stop() error {
 	select {
-	case <-n.endClient:
-		// when endClient is already closed
+	case <-n.ctx.Done():
+		// when ctx is already closed
 	default:
-		// when endClient is not closed yet
-		close(n.endClient)
+		// when ctx is not closed yet
+		n.cancel()
 	}
 	return n.ln.Close()
 }
