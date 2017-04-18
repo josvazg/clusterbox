@@ -27,9 +27,9 @@ The ```NewClusterBox()``` function will create a ClusteBox object for you the th
 
 Optionally you can call ```clusterbox.CancelByCtrlC(cancel)``` to have the running Clustebox be gracefully terminated upon pressing *Ctrl+C*, or you can use the cancel function from some other goroutine as you see fit.
 
-Finally you call the clusterbox object's ```Run()``` method to have it run until completed or cancelled by cancel().
+Finally you call the clusterbox object's ```Run()``` method to have it run until completed or cancelled by ```cancel()```.
 
-### Node customization
+### Creating Nodes
 
 As said before ClusterBox can only run Nodes as created by ```NewNodeFunc```:
 
@@ -40,3 +40,23 @@ type NewNodeFunc func(context.Context, int) (Node, error)
 The new nodes to be created take:
 * A cancellable context that the node needs to use to know when it has been cancelled and thus have to stop work and exit gracefully.
 * The node number in the cluster, in case the node to be generated may be different in configuration or specification and the node number can be used as a hint for deciding on the different options.
+
+### Implementing a Node
+
+```Node``` is a go interface with the following methods:
+```go
+	Endpoint() string
+	Setup(endpoints []string)
+	Serve()
+	Client()
+```
+* ```Endpoint()``` returns the URL at which the Node's server side is listening.
+* ```Setup(endpoints []string)``` prepares the node to do work.
+  * It receives as parameter the complete list of all nodes endpoints, as it is VERY likely that a node might need to know at least some of the other node member's endpoints so that it can communicate with them.
+* ```Serve()``` is the blocking server side loop of the node, just like ```http.Serve()```.
+  * Must return ONLY when the Node is done doing its work, the node's context was cancelled or the Node had a fatal failure.
+* ```Client()``` is the blocking client side loop of the node.
+  * Must also return ONLY on completion, node'es cancellatiuon or failure.
+  
+Even if your node is just a Client or a Server, don't leave the other side implementation empty, return ONLY after the Node work is done or the Node's context given at construction is cancelled. Otherwise **ClusterBox** WILL see the empty side ended and interpret it must cancel the whole node, closing the active side as well.
+  
