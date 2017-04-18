@@ -1,6 +1,7 @@
 package clusterbox_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/josvazg/clusterbox"
@@ -18,17 +19,12 @@ func (en *EmptyNode) Endpoint() string {
 	return "empty"
 }
 
-func (en *EmptyNode) Setup(nodes []clusterbox.Node) {}
+func (*EmptyNode) Setup(endpoints []string) {}
+func (*EmptyNode) Serve()                   {}
+func (*EmptyNode) Client()                  {}
+func (*EmptyNode) Stop() error              { return nil }
 
-func (en *EmptyNode) Serve() {}
-
-func (en *EmptyNode) Client() {}
-
-func (en *EmptyNode) Stop() error {
-	return nil
-}
-
-func NewEmptyNode(i int) (clusterbox.Node, error) {
+func NewEmptyNode(cctx context.Context, i int) (clusterbox.Node, error) {
 	return &EmptyNode{}, nil
 }
 

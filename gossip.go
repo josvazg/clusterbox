@@ -2,6 +2,7 @@ package clusterbox
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -20,30 +21,27 @@ type GossipNode struct {
 }
 
 // NewGossipNode is a NewNodeFunc creating a GossipNode from an HTTPNode
-func NewGossipNode(i int) (Node, error) {
+func NewGossipNode(cctx context.Context, i int) (Node, error) {
 	ln, err := net.Listen("tcp4", ":0")
 	if err != nil {
 		return nil, err
 	}
 	gh := &GossipNode{
-		HTTPNode: HTTPNode{
-			ln:         ln,
-			clientDone: make(chan struct{}),
-		},
+		HTTPNode: HTTPNode{ln: ln, cctx: cctx},
 		nodeList: make([]string, 0),
 	}
 	return gh, nil
 }
 
 // Setup prepares a GossipNode to do work
-func (gn *GossipNode) Setup(nodes []Node) {
+func (gn *GossipNode) Setup(endpoints []string) {
 	gn.add(gn.Endpoint())
-	for i, node := range nodes {
-		if node.Endpoint() == gn.Endpoint() {
-			next := (i + 1) % len(nodes)
-			nextNext := (i + 2) % len(nodes)
-			gn.add(nodes[next].Endpoint())
-			gn.add(nodes[nextNext].Endpoint())
+	for i, endpoint := range endpoints {
+		if endpoint == gn.Endpoint() {
+			next := (i + 1) % len(endpoints)
+			nextNext := (i + 2) % len(endpoints)
+			gn.add(endpoints[next])
+			gn.add(endpoints[nextNext])
 		}
 	}
 	gn.neighbors = len(gn.nodeList)
@@ -64,10 +62,11 @@ func (gn *GossipNode) Client() {
 	neighbor := 0
 	client := &http.Client{}
 	var pause time.Duration
+loop:
 	for {
 		select {
-		case <-gn.clientDone:
-			return
+		case <-gn.cctx.Done():
+			break loop
 		case <-time.After(pause * time.Millisecond):
 			neighborIndex, endpoint := gn.next(neighbor)
 			neighbor = neighborIndex
@@ -107,6 +106,8 @@ func (gn *GossipNode) Client() {
 			}
 		}
 	}
+	fmt.Printf("%s client exists knowing %d nodes\n", gn.Endpoint(), gn.size())
+	gn.ln.Close()
 }
 
 func (gn *GossipNode) add(endpoint string) {
@@ -154,10 +155,4 @@ func (gn *GossipNode) dumpEndpoints(resp http.ResponseWriter, req *http.Request)
 	for _, endpoint := range gn.nodeList {
 		fmt.Fprintf(resp, "%s\n", endpoint)
 	}
-}
-
-// Stop the HTTPNode work (Serve & Client)
-func (gn *GossipNode) Stop() error {
-	fmt.Printf("%s exists knowing %d nodes\n", gn.Endpoint(), gn.size())
-	return gn.HTTPNode.Stop()
 }

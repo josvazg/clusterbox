@@ -10,65 +10,77 @@ import (
 
 // ClusterBox allows you to run a 'full' cluster in a box.
 type ClusterBox struct {
-	nodes []Node
-	wg    sync.WaitGroup
-	ctx   context.Context
+	ctx     context.Context
+	nodes   []Node
+	cancels []context.CancelFunc
+	wg      sync.WaitGroup
 }
 
 // NewClusterBox creates a ClusterBox of the given size
 func NewClusterBox(size int, newNode NewNodeFunc) (
 	*ClusterBox, context.CancelFunc, error) {
 	nodes := make([]Node, 0, size)
+	cancels := make([]context.CancelFunc, 0, size)
+	ctx, cancel := context.WithCancel(context.Background())
 	for i := 0; i < size; i++ {
-		node, err := newNode(i)
+		nodeCtx, cancelNode := context.WithCancel(ctx)
+		node, err := newNode(nodeCtx, i)
 		if err != nil {
-			return nil, nil, err
+			cancelNode()
+			return nil, cancel, err
 		}
 		nodes = append(nodes, node)
+		cancels = append(cancels, cancelNode)
 		fmt.Printf("Node %d listens at %s\n", i, node.Endpoint())
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	return &ClusterBox{nodes: nodes, ctx: ctx}, cancel, nil
+	return &ClusterBox{nodes: nodes, cancels: cancels, ctx: ctx}, cancel, nil
+}
+
+func (cb *ClusterBox) endpoints() []string {
+	var endpoints []string
+	for _, node := range cb.nodes {
+		endpoints = append(endpoints, node.Endpoint())
+	}
+	return endpoints
 }
 
 // Run the ClusterBox until all nodes stop
 func (cb *ClusterBox) Run() {
-	go func() {
-		<-cb.ctx.Done()
-		for _, n := range cb.nodes {
-			n.Stop()
-		}
-	}()
-	for _, n := range cb.nodes {
+	endpoints := cb.endpoints()
+	for i, n := range cb.nodes {
 		cb.wg.Add(1)
-		go func(n Node) {
-			n.Setup(cb.nodes)
+		go func(n Node, cancel context.CancelFunc) {
+			// Node setup
+			n.Setup(endpoints)
+			// Launch the server side
 			serverDone := make(chan struct{})
 			go func(n Node, serverDone chan struct{}) {
 				n.Serve()
 				fmt.Printf("%s server is done\n", n.Endpoint())
 				close(serverDone)
 			}(n, serverDone)
+			// Luanch the client side
 			clientDone := make(chan struct{})
 			go func(n Node, clientDone chan struct{}) {
 				n.Client()
 				fmt.Printf("%s client is done\n", n.Endpoint())
 				close(clientDone)
 			}(n, clientDone)
-			var peerDone chan struct{}
+			// If client or server are done, cancel the whole node
+			var otherDone chan struct{}
 			select {
 			case <-serverDone:
-				peerDone = clientDone
+				otherDone = clientDone
 				fmt.Printf("%s waits for client to close...\n", n.Endpoint())
 			case <-clientDone:
-				peerDone = serverDone
+				otherDone = serverDone
 				fmt.Printf("%s waits for server to close...\n", n.Endpoint())
 			}
-			n.Stop()
-			<-peerDone
+			cancel()
+			<-otherDone
 			fmt.Printf("%s closed both client&server\n", n.Endpoint())
 			cb.wg.Done()
-		}(n)
+		}(n, cb.cancels[i])
 	}
 	cb.wg.Wait()
 }

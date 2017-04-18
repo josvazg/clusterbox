@@ -1,6 +1,7 @@
 package clusterbox
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -13,31 +14,36 @@ type Node interface {
 	Endpoint() string
 
 	// Setup sets the node up for work
-	Setup(nodes []Node)
+	//
+	// It probably needs to know some of the other node endpoints,
+	// so endpoints list is passed with the full cluster node's endpoints
+	Setup(endpoints []string)
+
 	// Serve is a blocking call that runs the server loop.
 	//
-	// It blocks until the service completes or the Node is Stopped
+	// It runs until the Node is cancelled or the server is
+	// done somehow; completes, fails or panics
 	Serve()
 
-	// ClientLoop is a blocking call that runs the client loop.
+	// Client is a blocking call that runs the client loop.
 	//
-	// It blocks until completed or the Node is stopped
+	// It runs until the Node is cancelled or the client is
+	// done somehow; completes, fails or panics
 	Client()
-
-	// Stop the Node
-	Stop() error
 }
 
 // NewNodeFunc creates a fresh Node for ClusterBox
-type NewNodeFunc func(int) (Node, error)
+//
+// Accepts as inputs a cancellable context & the node number in the cluster.
+type NewNodeFunc func(context.Context, int) (Node, error)
 
 // HTTPNode partly implements Node interface for HTTP.
 //
 // Consummers embedding HTTPNode must provide implementations
 // for Setup(), Serve() & Client() if they want to use it as a node.
 type HTTPNode struct {
-	ln         net.Listener
-	clientDone chan struct{}
+	ln   net.Listener
+	cctx context.Context
 }
 
 // Endpoint returns this HTTPNode's endpoint
@@ -53,16 +59,4 @@ func (hn *HTTPNode) ServeWith(serveMux *http.ServeMux) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s serve() died with: %v\n", endpoint, err)
 	}
-}
-
-// Stop the HTTPNode work (Serve & ClientLoop)
-func (hn *HTTPNode) Stop() error {
-	select {
-	case <-hn.clientDone:
-		// when ctx is already closed
-	default:
-		// when ctx is not closed yet
-		close(hn.clientDone)
-	}
-	return hn.ln.Close()
 }
