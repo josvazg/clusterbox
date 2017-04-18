@@ -28,3 +28,15 @@ The ```NewClusterBox()``` function will create a ClusteBox object for you the th
 Optionally you can call ```clusterbox.CancelByCtrlC(cancel)``` to have the running Clustebox be gracefully terminated upon pressing *Ctrl+C*, or you can use the cancel function from some other goroutine as you see fit.
 
 Finally you call the clusterbox object's ```Run()``` method to have it run until completed or cancelled by cancel().
+
+### Node customization
+
+As said before ClusterBox can only run Nodes as created by ```NewNodeFunc```:
+
+```go
+type NewNodeFunc func(context.Context, int) (Node, error)
+```
+
+The new nodes to be created take:
+* A cancellable context that the node needs to use to know when it has been cancelled and thus have to stop work and exit gracefully.
+* The node number in the cluster, in case the node to be generated may be different in configuration or specification and the node number can be used as a hint for deciding on the different options.
