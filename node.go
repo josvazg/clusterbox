@@ -1,7 +1,6 @@
 package clusterbox
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -37,9 +36,8 @@ type NewNodeFunc func(int) (Node, error)
 // Consummers embedding HTTPNode must provide implementations
 // for Setup(), Serve() & Client() if they want to use it as a node.
 type HTTPNode struct {
-	ln     net.Listener
-	ctx    context.Context
-	cancel context.CancelFunc
+	ln         net.Listener
+	clientDone chan struct{}
 }
 
 // Endpoint returns this HTTPNode's endpoint
@@ -60,11 +58,11 @@ func (hn *HTTPNode) ServeWith(serveMux *http.ServeMux) {
 // Stop the HTTPNode work (Serve & ClientLoop)
 func (hn *HTTPNode) Stop() error {
 	select {
-	case <-hn.ctx.Done():
+	case <-hn.clientDone:
 		// when ctx is already closed
 	default:
 		// when ctx is not closed yet
-		hn.cancel()
+		close(hn.clientDone)
 	}
 	return hn.ln.Close()
 }

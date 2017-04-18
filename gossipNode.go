@@ -2,7 +2,6 @@ package clusterbox
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -26,15 +25,14 @@ func NewGossipNode(i int) (Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	return &GossipNode{
+	gh := &GossipNode{
 		HTTPNode: HTTPNode{
-			ln:     ln,
-			ctx:    ctx,
-			cancel: cancel,
+			ln:         ln,
+			clientDone: make(chan struct{}),
 		},
 		nodeList: make([]string, 0),
-	}, nil
+	}
+	return gh, nil
 }
 
 // Setup prepares a GossipNode to do work
@@ -68,7 +66,7 @@ func (gn *GossipNode) Client() {
 	var pause time.Duration
 	for {
 		select {
-		case <-gn.ctx.Done():
+		case <-gn.clientDone:
 			return
 		case <-time.After(pause * time.Millisecond):
 			neighborIndex, endpoint := gn.next(neighbor)
