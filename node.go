@@ -2,16 +2,18 @@ package clusterbox
 
 import (
 	"context"
-	"fmt"
 	"net"
-	"net/http"
-	"os"
 )
+
+// Service reachable via an endpoint
+type Service interface {
+	// Endpoint to reach the service at
+	Endpoint() string
+}
 
 // Node that a ClusterBox can manage
 type Node interface {
-	// Endpoint returns the node's endpoint.
-	Endpoint() string
+	Service
 
 	// Setup sets the node up for work
 	//
@@ -37,26 +39,13 @@ type Node interface {
 // Accepts as inputs a cancellable context & the node number in the cluster.
 type NewNodeFunc func(context.Context, int) (Node, error)
 
-// HTTPNode partly implements Node interface for HTTP.
-//
-// Consummers embedding HTTPNode must provide implementations
-// for Setup(), Serve() & Client() if they want to use it as a node.
-type HTTPNode struct {
+// TCPService TCP service base for Nodes.
+type TCPService struct {
 	ln   net.Listener
 	cctx context.Context
 }
 
 // Endpoint returns this HTTPNode's endpoint
-func (hn *HTTPNode) Endpoint() string {
+func (hn *TCPService) Endpoint() string {
 	return hn.ln.Addr().String()
-}
-
-// ServeWith runs the HTTPNode server's side by routing to
-// the given ServeMux handlers
-func (hn *HTTPNode) ServeWith(serveMux *http.ServeMux) {
-	endpoint := hn.Endpoint()
-	err := http.Serve(hn.ln, serveMux)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s serve() died with: %v\n", endpoint, err)
-	}
 }

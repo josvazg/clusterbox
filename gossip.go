@@ -14,7 +14,7 @@ import (
 
 // GossipNode is a full sample Node implementation
 type GossipNode struct {
-	HTTPNode
+	TCPService
 	mtx       sync.RWMutex
 	nodeList  []string
 	neighbors int
@@ -27,8 +27,8 @@ func NewGossipNode(cctx context.Context, i int) (Node, error) {
 		return nil, err
 	}
 	gh := &GossipNode{
-		HTTPNode: HTTPNode{ln: ln, cctx: cctx},
-		nodeList: make([]string, 0),
+		TCPService: TCPService{ln: ln, cctx: cctx},
+		nodeList:   make([]string, 0),
 	}
 	return gh, nil
 }
@@ -54,7 +54,11 @@ func (gn *GossipNode) Setup(endpoints []string) {
 func (gn *GossipNode) Serve() {
 	serveMux := http.NewServeMux()
 	serveMux.HandleFunc("/", gn.dumpEndpoints)
-	gn.HTTPNode.ServeWith(serveMux)
+	endpoint := gn.Endpoint()
+	err := http.Serve(gn.ln, serveMux)
+	if err != nil {
+		log.Printf("ERROR: %s serve() died with: %v\n", endpoint, err)
+	}
 }
 
 // Client runs all GossipNode's client actions
