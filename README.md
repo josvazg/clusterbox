@@ -9,3 +9,22 @@ Mind you, clusterbox might not be suitable for all your testing and validation n
 * Experiment a transport modification impact by comparing clusterboxes with and without the changes.
 
 I wrote this initially for the latest use case. I plan a Mutual TLS project and i would like to compare behaviour and performance of a cluster with Mutual hot-rotating TLS certificates vs the same with plain sockets or static certificates.
+
+## Usage
+
+### Running a ClusterBox
+
+See cmd/clusterbox/clusterbox.go:
+
+```go
+	cb, cancel, err := clusterbox.NewClusterBox(size, NewNodeFunc)
+	...
+	clusterbox.CancelByCtrlC(cancel)
+	cb.Run()
+```
+
+The ```NewClusterBox()``` function will create a ClusteBox object for you the the given size and using the function ```NewNodeFunc()``` to populate its nodes. All the rest of the customization lies in the implementation of those Nodes.
+
+Optionally you can call ```clusterbox.CancelByCtrlC(cancel)``` to have the running Clustebox be gracefully terminated upon pressing *Ctrl+C*, or you can use the cancel function from some other goroutine as you see fit.
+
+Finally you call the clusterbox object's ```Run()``` method to have it run until completed or cancelled by cancel().
