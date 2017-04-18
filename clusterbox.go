@@ -1,6 +1,7 @@
 package clusterbox
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -11,37 +12,37 @@ import (
 type ClusterBox struct {
 	nodes []Node
 	wg    sync.WaitGroup
+	ctx   context.Context
 }
 
 // NewClusterBox creates a ClusterBox of the given size
-func NewClusterBox(size int, newNode NewNodeFunc) (*ClusterBox, error) {
+func NewClusterBox(size int, newNode NewNodeFunc) (
+	*ClusterBox, context.CancelFunc, error) {
 	nodes := make([]Node, 0, size)
 	for i := 0; i < size; i++ {
 		node, err := newNode(i)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		nodes = append(nodes, node)
 		fmt.Printf("Node %d listens at %s\n", i, node.Endpoint())
 	}
-	return &ClusterBox{nodes: nodes}, nil
+	ctx, cancel := context.WithCancel(context.Background())
+	return &ClusterBox{nodes: nodes, ctx: ctx}, cancel, nil
 }
 
 // Run the ClusterBox until all nodes stop
-func (c *ClusterBox) Run() {
-	interrupts := make(chan os.Signal, 1)
-	signal.Notify(interrupts, os.Interrupt)
+func (cb *ClusterBox) Run() {
 	go func() {
-		<-interrupts
-		fmt.Println("Received Ctrl+C, stopping nodes...")
-		for _, n := range c.nodes {
+		<-cb.ctx.Done()
+		for _, n := range cb.nodes {
 			n.Stop()
 		}
 	}()
-	for _, n := range c.nodes {
-		c.wg.Add(1)
+	for _, n := range cb.nodes {
+		cb.wg.Add(1)
 		go func(n Node) {
-			n.Setup(c.nodes)
+			n.Setup(cb.nodes)
 			serverDone := make(chan struct{})
 			go func(n Node, serverDone chan struct{}) {
 				n.Serve()
@@ -66,8 +67,19 @@ func (c *ClusterBox) Run() {
 			n.Stop()
 			<-peerDone
 			fmt.Printf("%s closed both client&server\n", n.Endpoint())
-			c.wg.Done()
+			cb.wg.Done()
 		}(n)
 	}
-	c.wg.Wait()
+	cb.wg.Wait()
+}
+
+// CancelByCtrlC will trigger cancel on Ctrl+c
+func CancelByCtrlC(cancel context.CancelFunc) {
+	interrupts := make(chan os.Signal, 1)
+	signal.Notify(interrupts, os.Interrupt)
+	go func() {
+		<-interrupts
+		fmt.Println("Received Ctrl+C, cancelling clusterbox...")
+		cancel()
+	}()
 }

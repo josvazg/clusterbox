@@ -36,7 +36,7 @@ var sizes = []int{1, 10, 100}
 
 func TestClusterBoxWithEmptyNode(t *testing.T) {
 	for _, size := range sizes {
-		clusterbox, err := clusterbox.NewClusterBox(size, NewEmptyNode)
+		clusterbox, _, err := clusterbox.NewClusterBox(size, NewEmptyNode)
 		dieOnError(t, err)
 		clusterbox.Run()
 	}
