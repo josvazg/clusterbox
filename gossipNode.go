@@ -155,3 +155,9 @@ func (gn *GossipNode) dumpEndpoints(resp http.ResponseWriter, req *http.Request)
 		fmt.Fprintf(resp, "%s\n", endpoint)
 	}
 }
+
+// Stop the HTTPNode work (Serve & Client)
+func (gn *GossipNode) Stop() error {
+	fmt.Printf("%s exists knowing %d nodes\n", gn.Endpoint(), gn.size())
+	return gn.HTTPNode.Stop()
+}
