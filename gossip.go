@@ -156,6 +156,8 @@ func (gn *GossipNode) next(neighbor int) (int, string) {
 
 func (gn *GossipNode) dumpEndpoints(resp http.ResponseWriter, req *http.Request) {
 	resp.WriteHeader(http.StatusOK)
+	gn.mtx.RLock()
+	defer gn.mtx.RUnlock()
 	for _, endpoint := range gn.nodeList {
 		fmt.Fprintf(resp, "%s\n", endpoint)
 	}
