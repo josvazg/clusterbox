@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -74,7 +74,7 @@ loop:
 			url := "http://" + endpoint
 			resp, err := client.Get(url)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s client() got error: %v\n", gn.Endpoint(), err)
+				log.Printf("ERROR: %s client() got error: %v\n", gn.Endpoint(), err)
 			}
 			// merge endpoints received
 			inEndpoints := make([]string, 0, 1)
@@ -85,7 +85,7 @@ loop:
 				inEndpoints = append(inEndpoints, endpoint)
 			}
 			if err := scanner.Err(); err != nil {
-				fmt.Fprintf(os.Stderr, "Error reading server reply: %v\n", err)
+				log.Printf("ERROR: reading server reply: %v\n", err)
 				return
 			}
 			sizeBefore := gn.size()
@@ -100,13 +100,13 @@ loop:
 				pause = 20
 			}
 			if sizeAfter != sizeBefore {
-				fmt.Printf("%s now knows %d nodes\n", gn.Endpoint(), sizeAfter)
+				log.Printf("%s now knows %d nodes\n", gn.Endpoint(), sizeAfter)
 			} else {
 				pause = 500
 			}
 		}
 	}
-	fmt.Printf("%s client exists knowing %d nodes\n", gn.Endpoint(), gn.size())
+	log.Printf("%s client exits knowing %d nodes\n", gn.Endpoint(), gn.size())
 	gn.ln.Close()
 }
 

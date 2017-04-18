@@ -2,6 +2,8 @@ package clusterbox_test
 
 import (
 	"context"
+	"io/ioutil"
+	"log"
 	"testing"
 
 	"github.com/josvazg/clusterbox"
@@ -30,7 +32,12 @@ func NewEmptyNode(cctx context.Context, i int) (clusterbox.Node, error) {
 
 var sizes = []int{1, 10, 100}
 
+func setup() {
+	log.SetOutput(ioutil.Discard)
+}
+
 func TestClusterBoxWithEmptyNode(t *testing.T) {
+	setup()
 	for _, size := range sizes {
 		clusterbox, _, err := clusterbox.NewClusterBox(size, NewEmptyNode)
 		dieOnError(t, err)

@@ -2,7 +2,7 @@ package clusterbox
 
 import (
 	"context"
-	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"sync"
@@ -31,7 +31,7 @@ func NewClusterBox(size int, newNode NewNodeFunc) (
 		}
 		nodes = append(nodes, node)
 		cancels = append(cancels, cancelNode)
-		fmt.Printf("Node %d listens at %s\n", i, node.Endpoint())
+		log.Printf("Node %d listens at %s\n", i, node.Endpoint())
 	}
 	return &ClusterBox{nodes: nodes, cancels: cancels, ctx: ctx}, cancel, nil
 }
@@ -56,14 +56,14 @@ func (cb *ClusterBox) Run() {
 			serverDone := make(chan struct{})
 			go func(n Node, serverDone chan struct{}) {
 				n.Serve()
-				fmt.Printf("%s server is done\n", n.Endpoint())
+				log.Printf("%s server is done\n", n.Endpoint())
 				close(serverDone)
 			}(n, serverDone)
 			// Luanch the client side
 			clientDone := make(chan struct{})
 			go func(n Node, clientDone chan struct{}) {
 				n.Client()
-				fmt.Printf("%s client is done\n", n.Endpoint())
+				log.Printf("%s client is done\n", n.Endpoint())
 				close(clientDone)
 			}(n, clientDone)
 			// If client or server are done, cancel the whole node
@@ -71,14 +71,14 @@ func (cb *ClusterBox) Run() {
 			select {
 			case <-serverDone:
 				otherDone = clientDone
-				fmt.Printf("%s waits for client to close...\n", n.Endpoint())
+				log.Printf("%s waits for client to close...\n", n.Endpoint())
 			case <-clientDone:
 				otherDone = serverDone
-				fmt.Printf("%s waits for server to close...\n", n.Endpoint())
+				log.Printf("%s waits for server to close...\n", n.Endpoint())
 			}
 			cancel()
 			<-otherDone
-			fmt.Printf("%s closed both client&server\n", n.Endpoint())
+			log.Printf("%s closed both client&server\n", n.Endpoint())
 			cb.wg.Done()
 		}(n, cb.cancels[i])
 	}
@@ -91,7 +91,7 @@ func CancelByCtrlC(cancel context.CancelFunc) {
 	signal.Notify(interrupts, os.Interrupt)
 	go func() {
 		<-interrupts
-		fmt.Println("Received Ctrl+C, cancelling clusterbox...")
+		log.Println("Received Ctrl+C, cancelling clusterbox...")
 		cancel()
 	}()
 }
