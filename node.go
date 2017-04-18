@@ -39,13 +39,21 @@ type Node interface {
 // Accepts as inputs a cancellable context & the node number in the cluster.
 type NewNodeFunc func(context.Context, int) (Node, error)
 
-// TCPService TCP service base for Nodes.
-type TCPService struct {
-	ln   net.Listener
-	cctx context.Context
+// NetService Net service base for Nodes.
+type NetService struct {
+	ln net.Listener
 }
 
-// Endpoint returns this HTTPNode's endpoint
-func (hn *TCPService) Endpoint() string {
+// Endpoint returns the NetService's endpoint
+func (hn *NetService) Endpoint() string {
 	return hn.ln.Addr().String()
+}
+
+// NewNetService creates a NetService or returns an error if that fails
+func NewNetService(network string) (*NetService, error) {
+	ln, err := net.Listen(network, ":0")
+	if err != nil {
+		return nil, err
+	}
+	return &NetService{ln: ln}, nil
 }

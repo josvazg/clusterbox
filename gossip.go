@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -14,21 +13,23 @@ import (
 
 // GossipNode is a full sample Node implementation
 type GossipNode struct {
-	TCPService
+	NetService
+	cctx      context.Context
 	mtx       sync.RWMutex
 	nodeList  []string
 	neighbors int
 }
 
-// NewGossipNode is a NewNodeFunc creating a GossipNode from an HTTPNode
+// NewGossipNode is a NewNodeFunc creating a GossipNode from an NetService
 func NewGossipNode(cctx context.Context, i int) (Node, error) {
-	ln, err := net.Listen("tcp4", ":0")
+	netService, err := NewNetService("tcp4")
 	if err != nil {
 		return nil, err
 	}
 	gh := &GossipNode{
-		TCPService: TCPService{ln: ln, cctx: cctx},
+		NetService: *netService,
 		nodeList:   make([]string, 0),
+		cctx:       cctx,
 	}
 	return gh, nil
 }
