@@ -7,30 +7,6 @@ import (
 	"sync"
 )
 
-// Node that a ClusterBox can manage
-type Node interface {
-	// Endpoint returns the node's endpoint.
-	Endpoint() string
-
-	// Setup sets the node up for work
-	Setup(nodes []Node)
-	// Serve is a blocking call that runs the server loop.
-	//
-	// It blocks until the service completes or the Node is Stopped
-	Serve()
-
-	// ClientLoop is a blocking call that runs the client loop.
-	//
-	// It blocks until completed or the Node is stopped
-	ClientLoop()
-
-	// Stop the Node
-	Stop() error
-}
-
-// NewNodeFunc creates a fresh Node for ClusterBox
-type NewNodeFunc func(int) (Node, error)
-
 // ClusterBox allows you to run a 'full' cluster in a box.
 type ClusterBox struct {
 	nodes []Node
@@ -74,7 +50,7 @@ func (c *ClusterBox) Run() {
 			}(n, serverDone)
 			clientDone := make(chan struct{})
 			go func(n Node, clientDone chan struct{}) {
-				n.ClientLoop()
+				n.Client()
 				fmt.Printf("%s client is done\n", n.Endpoint())
 				close(clientDone)
 			}(n, clientDone)
