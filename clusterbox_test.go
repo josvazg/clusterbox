@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"testing"
+	"time"
 
 	"github.com/josvazg/clusterbox"
 )
@@ -20,14 +21,16 @@ type EmptyNode struct{}
 func (en *EmptyNode) Endpoint() string {
 	return "empty"
 }
-
 func (*EmptyNode) Setup(endpoints []string) {}
 func (*EmptyNode) Serve()                   {}
 func (*EmptyNode) Client()                  {}
-func (*EmptyNode) Stop() error              { return nil }
 
 func NewEmptyNode(cctx context.Context, i int) (clusterbox.Node, error) {
 	return &EmptyNode{}, nil
+}
+
+func NewTCP4IdleNode(cctx context.Context, i int) (clusterbox.Node, error) {
+	return clusterbox.NewIdleNode(cctx, "tcp4")
 }
 
 var sizes = []int{1, 10, 100}
@@ -42,5 +45,32 @@ func TestClusterBoxWithEmptyNode(t *testing.T) {
 		clusterbox, _, err := clusterbox.NewClusterBox(size, NewEmptyNode)
 		dieOnError(t, err)
 		clusterbox.Run()
+	}
+}
+
+func timeout(t *testing.T, duration time.Duration) *time.Timer {
+	return time.AfterFunc(5*time.Second, func() {
+		t.Fatal("Timeout!")
+	})
+}
+
+func TestClusterBoxWithIdleNode(t *testing.T) {
+	setup()
+	for _, size := range sizes {
+		cancelled := false
+		clusterbox, cancel, err := clusterbox.NewClusterBox(
+			size, NewTCP4IdleNode)
+		dieOnError(t, err)
+		timeout := timeout(t, 5*time.Second)
+		defer timeout.Stop()
+		timer := time.AfterFunc(500*time.Millisecond, func() {
+			cancel()
+			cancelled = true
+		})
+		defer timer.Stop()
+		clusterbox.Run()
+		if !cancelled {
+			t.Fatalf("IdleNode was expected to have been cancelled!")
+		}
 	}
 }

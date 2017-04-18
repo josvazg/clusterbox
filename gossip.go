@@ -13,25 +13,22 @@ import (
 
 // GossipNode is a full sample Node implementation
 type GossipNode struct {
-	NetService
-	cctx      context.Context
+	IdleNode
 	mtx       sync.RWMutex
 	nodeList  []string
 	neighbors int
 }
 
-// NewGossipNode is a NewNodeFunc creating a GossipNode from an NetService
+// NewGossipNode is a NewNodeFunc creating a GossipNode from an IdleNode
 func NewGossipNode(cctx context.Context, i int) (Node, error) {
-	netService, err := NewNetService("tcp4")
+	idleNode, err := NewIdleNode(cctx, "tcp4")
 	if err != nil {
 		return nil, err
 	}
-	gh := &GossipNode{
-		NetService: *netService,
-		nodeList:   make([]string, 0),
-		cctx:       cctx,
-	}
-	return gh, nil
+	return &GossipNode{
+		IdleNode: *idleNode,
+		nodeList: make([]string, 0),
+	}, nil
 }
 
 // Setup prepares a GossipNode to do work
@@ -70,7 +67,7 @@ func (gn *GossipNode) Client() {
 loop:
 	for {
 		select {
-		case <-gn.cctx.Done():
+		case <-gn.Cctx.Done():
 			break loop
 		case <-time.After(pause * time.Millisecond):
 			neighborIndex, endpoint := gn.next(neighbor)

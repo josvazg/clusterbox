@@ -57,3 +57,42 @@ func NewNetService(network string) (*NetService, error) {
 	}
 	return &NetService{ln: ln}, nil
 }
+
+// IdleNode is a node that just sits waiting for the node to be cancelled
+//
+// It is meant to be embedded and do something, for example impleemnt a pure
+// server or client while leaving the other side idle.
+type IdleNode struct {
+	NetService
+	Cctx context.Context
+}
+
+// WaitCancel will block until the node is cancelled
+func (in *IdleNode) WaitCancel() {
+	<-in.Cctx.Done()
+}
+
+// Setup does nothing for IdleNode
+func (*IdleNode) Setup(endpoints []string) {}
+
+// Serve just sits waiting on cancellation for IdleNode
+func (in *IdleNode) Serve() {
+	in.WaitCancel()
+}
+
+// Client just sits waiting on cancellation for IdleNode
+func (in *IdleNode) Client() {
+	in.WaitCancel()
+}
+
+// NewIdleNode returns an empty Node implementation
+func NewIdleNode(cctx context.Context, network string) (*IdleNode, error) {
+	netService, err := NewNetService(network)
+	if err != nil {
+		return nil, err
+	}
+	return &IdleNode{
+		NetService: *netService,
+		Cctx:       cctx,
+	}, nil
+}
