@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// GossipNode is a full sample Node implementation
+// GossipNode is a full sample Node implementation based on IdleNode
 type GossipNode struct {
 	IdleNode
 	mtx       sync.RWMutex
