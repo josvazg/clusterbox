@@ -14,7 +14,7 @@ I wrote this initially for the latest use case. I plan a Mutual TLS project and 
 
 ### Running a ClusterBox
 
-See cmd/clusterbox/clusterbox.go:
+See [cmd/clusterbox/clusterbox.go](http://github.com/josvazg/clusterbox/blob/master/cmd/clusterbox/clusterbox.go):
 
 ```go
 	cb, cancel, err := clusterbox.NewClusterBox(size, NewNodeFunc)
@@ -43,7 +43,7 @@ The new nodes to be created take:
 
 ### Implementing a Node
 
-```Node``` is a go interface with the following methods:
+```Node``` is a go interface defined at [node.go](https://github.com/josvazg/clusterbox/blob/master/node.go) with the following methods:
 ```go
 	Endpoint() string
 	Setup(endpoints []string)
@@ -57,6 +57,15 @@ The new nodes to be created take:
   * Must return ONLY when the Node is done doing its work, the node's context was cancelled or the Node had a fatal failure.
 * ```Client()``` is the blocking client side loop of the node.
   * Must also return ONLY on completion, node'es cancellatiuon or failure.
+
+#### Caveats
+* **Do NOT leave Serve() or Client() implementations empty**: Even if your node is just a pure Client or a Server, return ONLY after the Node work is done or the Node's context given at construction is cancelled. Otherwise **ClusterBox** WILL see the empty side ended and interpret it must cancel the whole node, closing the other *active* side as well.
+* **Do NOT use http convenience functions or default global variables**, such as *http.DefaultServeMux*: All nodes will run without isolation in the same process space, so keep them isolated by NOT sharing variables between them.
   
-Even if your node is just a Client or a Server, don't leave the other side implementation empty, return ONLY after the Node work is done or the Node's context given at construction is cancelled. Otherwise **ClusterBox** WILL see the empty side ended and interpret it must cancel the whole node, closing the active side as well.
+## Sample Node & Cluster Protocol
   
+A full node sample implementation can be seen at [gossip.go](https://github.com/josvazg/clusterbox/blob/master/gossip.go). It is a simple gossip protocol that:
+* Sets up each node to know the two nodes after it (rolling to the first & second for the last & second to last nodes)
+* The server side returns the current know list of node endpoints.
+* The client side queries know endpoints (servers) and adds to the known list of endpoints any new/unknown node found in the reply.
+The expectative is that, after a few iterations, all nodes should now all others.
