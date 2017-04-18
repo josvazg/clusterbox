@@ -4,7 +4,7 @@ Run a cluster transport or protocol test in a single box
 When designing cluster protocols or testign the impact of some cluster wide changes, sometimes you wish you could do it all in a single box, easily fast & cheap... You are lucky, clusterbox does just that for you, so long you are doing it in Golang.
 
 Mind you, clusterbox might not be suitable for all your testing and validation needs, for instance, you can't expect to do performance tests or run too many heavy loaded nodes in a single box. But, having said that, you can probably:
-* Prototype and test cluster protocols (eg. consensus protocols like Paxos or Raft)
+* Prototype and test cluster protocols (eg. consensus protocols like Paxos or Raft).
 * Run a lightweight version of prototype of your service, or a subset of it, with light load.
 * Experiment a transport modification impact by comparing clusterboxes with and without the changes.
 
@@ -57,9 +57,12 @@ The new nodes to be created take:
   * Must return ONLY when the Node is done doing its work, the node's context was cancelled or the Node had a fatal failure.
 * ```Client()``` is the blocking client side loop of the node.
   * Must also return ONLY on completion, node'es cancellatiuon or failure.
+  
+It is usually a good idea to use ```IdleNode``` (defined in [node.go](https://github.com/josvazg/clusterbox/blob/master/node.go)) as base of your ```Node``` implementations, just as the sample [gossip.go](https://github.com/josvazg/clusterbox/blob/master/gossip.go) ilustrates.
 
 #### Caveats
 * **Do NOT leave Serve() or Client() implementations empty**: Even if your node is just a pure Client or a Server, return ONLY after the Node work is done or the Node's context given at construction is cancelled. Otherwise **ClusterBox** WILL see the empty side ended and interpret it must cancel the whole node, closing the other *active* side as well.
+  * For convinience, embed ```IdleNode``` as a base so that leaving the default implementation will sit idle, or otherwise use ```WaitCancel()```.
 * **Do NOT use http convenience functions or default global variables**, such as *http.DefaultServeMux*: All nodes will run without isolation in the same process space, so keep them isolated by NOT sharing variables between them.
   
 ## Sample Node & Cluster Protocol
