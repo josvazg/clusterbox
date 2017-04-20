@@ -2,8 +2,10 @@ package clusterbox_test
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"log"
+	"os"
 	"testing"
 	"time"
 
@@ -48,9 +50,10 @@ func TestClusterBoxWithEmptyNode(t *testing.T) {
 	}
 }
 
-func timeout(t *testing.T, duration time.Duration) *time.Timer {
+func timeout(t *testing.T, duration time.Duration, name string) *time.Timer {
 	return time.AfterFunc(5*time.Second, func() {
-		t.Fatal("Timeout!")
+		fmt.Fprintf(os.Stderr, "%s: Timeout!\n", name)
+		os.Exit(1)
 	})
 }
 
@@ -61,7 +64,7 @@ func TestClusterBoxWithIdleNode(t *testing.T) {
 		clusterbox, cancel, err := clusterbox.NewClusterBox(
 			size, NewTCP4IdleNode)
 		dieOnError(t, err)
-		timeout := timeout(t, 5*time.Second)
+		timeout := timeout(t, 5*time.Second, "TestClusterBoxWithIdleNode")
 		defer timeout.Stop()
 		timer := time.AfterFunc(500*time.Millisecond, func() {
 			cancel()
